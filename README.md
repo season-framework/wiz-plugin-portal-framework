@@ -4,7 +4,7 @@
 - install from github
 
 ```
-wiz plugin add https://git.season.co.kr/
+wiz plugin add https://github.com/season-framework/wiz-plugin-portal-framework
 ```
 
 - add configuration `System Setting - IDE Menu`
