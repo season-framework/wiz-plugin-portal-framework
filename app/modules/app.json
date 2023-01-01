@@ -1,0 +1,18 @@
+{
+    "title": "Portal Component List",
+    "viewuri": "",
+    "category": "app",
+    "ng.build": {
+        "id": "season.portal.list",
+        "name": "SeasonPortalListComponent",
+        "path": "./season.portal.list/season.portal.list.component"
+    },
+    "ng": {
+        "selector": "wiz-season-portal-list",
+        "inputs": [
+            "title"
+        ],
+        "outputs": []
+    },
+    "template": "wiz-portal-app-modules([title]=\"\")"
+}
