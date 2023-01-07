@@ -3,6 +3,8 @@
         h3.nowrap.m-0(style="max-width: 220px; overflow: hidden; text-overflow: ellipsis;")
             span Portal
         .ml-auto
+        .btn.btn-white.btn-sm.me-1((click)="build();")
+            i.fa-solid.fa-wand-sparkles.text-blue
         .btn.btn-white.btn-sm.me-1((click)="refresh();")
             i.fa-solid.fa-refresh.text-blue
         .btn.btn-white.btn-sm.me-1((click)="create(null, 'folder');")

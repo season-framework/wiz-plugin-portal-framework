@@ -110,6 +110,12 @@ export class Component implements OnInit {
         else toastr.error("Error on build");
     }
 
+    public async build() {
+        let res = await wiz.call('build', {});
+        if (res.code == 200) toastr.info("Builded");
+        else toastr.error("Error on build");
+    }
+
     public async open(node: FileNode, location: number = -1) {
         if (!node) return;
         if (node.editable) return;
