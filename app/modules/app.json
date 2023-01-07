@@ -14,5 +14,5 @@
         ],
         "outputs": []
     },
-    "template": "wiz-portal-app-modules([title]=\"\")"
+    "template": "wiz-portal-app-modules()"
 }

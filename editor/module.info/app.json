@@ -1,0 +1,7 @@
+{
+    "id": "module.info",
+    "title": "Module Info",
+    "category": "",
+    "description": "module info",
+    "template": "wiz-portal-editor-module-info([editor]=\"\")"
+}

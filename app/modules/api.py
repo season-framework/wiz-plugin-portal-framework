@@ -6,10 +6,37 @@ import shutil
 import datetime
 import json
 import season
+import git
 from season.core.builder.base import Converter
 
 workspace = wiz.workspace("service")
 fs = workspace.fs()
+
+def upgrade():
+    path = wiz.request.query("path", True)
+    info = fs.read.json(os.path.join(path, "portal.json"), dict())
+    if 'repo' not in info:
+        wiz.response.status(404, True)
+    
+    cachefs = season.util.os.FileSystem(fs.abspath(".cache"))
+    cachefs.remove()
+    
+    try:
+        repo = info['repo']
+        downloaded = cachefs.abspath("portal")
+        git.Repo.clone_from(repo, downloaded)
+    except:
+        pass
+    
+    if cachefs.exists("portal") == False:
+        wiz.response.status(404, True)
+
+    fs.remove(path)
+    fs.move(cachefs.abspath("portal"), path)
+    cachefs.remove()
+
+    build()
+    wiz.response.status(200, True)
 
 def list(segment):
     path = wiz.request.query("path", True)
@@ -17,20 +44,39 @@ def list(segment):
     res = []
 
     if fs.isdir(path):
-        if len(segment) == 2:        
-            res.append(dict(name='app', path=os.path.join(path, 'app'), type='mod.app'))
-            res.append(dict(name='api', path=os.path.join(path, 'route'), type='mod.route'))
-            res.append(dict(name='libs', path=os.path.join(path, 'libs'), type='mod.libs'))
-            res.append(dict(name='assets', path=os.path.join(path, 'assets'), type='mod.assets'))
+        if len(segment) == 1:
+            files = fs.files(path)
+            for name in files:
+                fpath = os.path.join(path, name)
+                if fs.isdir(fpath) == False:
+                    continue
+                plugin = fs.read.json(os.path.join(fpath, "portal.json"), dict())
+                title = name
+                if 'title' in plugin and len(plugin['title']) > 0:
+                    title = plugin['title']
+                res.append(dict(name=title, path=fpath, type='folder', meta=plugin))
+            
+            res = sorted(res, key=lambda k: k['name'])
+            wiz.response.status(200, res)
+
+        elif len(segment) == 2:
+            res.append(dict(name='sample', path=os.path.join(path, 'sample'), type='mod.page'))
+            res.append(dict(name='app', path=os.path.join(path, 'app'), type='mod.app', meta=dict(icon="fa-solid fa-layer-group")))
+            res.append(dict(name='api', path=os.path.join(path, 'route'), type='mod.route', meta=dict(icon="fa-solid fa-link")))
+            res.append(dict(name='libs', path=os.path.join(path, 'libs'), type='mod.libs', meta=dict(icon="fa-solid fa-book")))
+            res.append(dict(name='assets', path=os.path.join(path, 'assets'), type='mod.assets', meta=dict(icon="fa-solid fa-images")))
             res.append(dict(name='controller', path=os.path.join(path, 'controller'), type='mod.controller'))
             res.append(dict(name='model', path=os.path.join(path, 'model'), type='mod.model'))
+            res.append(dict(name='Package Info', path=os.path.join(path, 'portal.json'), type='file', meta=dict(icon="fa-solid fa-info", editor="info")))
             res.append(dict(name='README', path=os.path.join(path, 'README.md'), type='file'))
             wiz.response.status(200, res)
         
         elif len(segment) == 3:
             mod = segment[2]
+            if mod == 'sample':
+                mod = 'page'
             
-            if mod == 'app' or mod == 'route':
+            if mod == 'app' or mod == 'route' or mod == 'page':
                 files = fs.files(path)
                 for name in files:
                     fpath = os.path.join(path, name)
@@ -237,7 +283,7 @@ def upload_app(segment):
 
     wiz.response.status(200, notuploaded)
 
-def build(segment):
+def build():
     portalfs = workspace.fs("portal")
     modules = portalfs.ls()
 

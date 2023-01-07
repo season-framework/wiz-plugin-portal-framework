@@ -5,22 +5,9 @@ import $ from 'jquery';
 import toastr from "toastr";
 
 import { FlatTreeControl } from '@angular/cdk/tree';
-import { FileNode, FileDataSource } from './service';
+import { FileNode, FileDataSource, Workspace } from './service';
 
-import MonacoEditor from "@wiz/app/core.editor.monaco";
-import InfoEditor from "@wiz/app/workspace.editor.ngapp.info";
-import RouteInfoEditor from "@wiz/app/workspace.editor.route";
-
-const DEFAULT_COMPONENT = `import { OnInit, Input } from '@angular/core';
-
-export class Replacement implements OnInit {
-    @Input() title: any;
-
-    public async ngOnInit() {
-    }
-}`.replace('Replacement', 'Component');
-
-const DEFAULT_API = ``;
+import ModuleInfoEditor from "@wiz/app/portal.editor.module.info";
 
 toastr.options = {
     "closeButton": false,
@@ -62,7 +49,19 @@ export class Component implements OnInit {
     public isNew = (_: number, node: FileNode) => node.type == 'new.folder' || node.type == 'new.file';
     public isRoot = (node: FileNode) => node.path.split("/").length == 2;
 
-    constructor(private service: Service) { }
+    constructor(private service: Service) {
+        this.workspace = new Workspace(service, wiz);
+    }
+
+    public async upgrade(node: any) {
+        let res = await this.service.alert.show({ title: 'Upgrade Package', message: 'Are you sure upgrade "' + node.name + '"?', action: "Upgrade", actionBtn: "success", status: "success" });
+        if (res !== true) return;
+        await this.loader(true);
+        let path = node.path;
+        await wiz.call('upgrade', { path });
+        await this.loader(false);
+        await this.refresh();
+    }
 
     public drag(event: any, node: any) {
         event.dataTransfer.setData("text", node.meta.template);
@@ -95,7 +94,7 @@ export class Component implements OnInit {
         data = data.map(item => new FileNode(item.name, item.path, item.type, node, node.level + 1, item.meta ? item.meta : {}));
         data.sort((a, b) => {
             if (a.type == b.type)
-                return a.path.localeCompare(b.path);
+                return a.name.localeCompare(b.name);
             if (a.type == 'folder') return -1;
             if (b.type == 'folder') return 1;
         });
@@ -122,290 +121,82 @@ export class Component implements OnInit {
         if (node.type.split(".")[0] == "new") return;
 
         let openEditor = {
+            page: async () => {
+                let path = node.path.split("/");
+                let mod_id = path[1];
+                let app_id = path[path.length - 1];
+                let app = node.meta;
+                app.id = app_id;
+                app.namespace = app_id;
+                let editor = await this.workspace.PageEditor(mod_id, app);
+                editor.ctrls = [];
+                editor.layout = [];
+                await editor.open(location);
+            },
             app: async () => {
                 let path = node.path.split("/");
                 let mod_id = path[1];
                 let app_id = path[path.length - 1];
-                let component_id = "portal.app." + mod_id + "." + app_id;
-                let subtitle = "portal." + mod_id + "." + app_id;
-
-                let editor = this.service.editor.create({
-                    component_id: component_id,
-                    path: node.path,
-                    title: node.name,
-                    subtitle: subtitle,
-                    current: 1
-                });
-
-                let ctrls = await wiz.call("controllers", { module: mod_id });
-                ctrls = ctrls.data;
-                editor.ctrls = ctrls;
-
-                editor.namespace_prefix = "portal." + mod_id + ".";
-
-                editor.create({
-                    name: 'info',
-                    viewref: InfoEditor,
-                    path: node.path + "/app.json"
-                }).bind('data', async (tab) => {
-                    let { code, data } = await wiz.call('read', { path: tab.path });
-                    if (code != 200) return {};
-                    data = JSON.parse(data);
-                    return data;
-                }).bind('update', async (tab) => {
-                    let data = await tab.data();
-                    let check = /^[a-z0-9.]+$/.test(data.namespace);
-                    if (!check) return toastr.error("invalidate namespace");
-                    if (data.namespace.length < 3) return toastr.error("namespace at least 3 alphabets");
-
-                    let from = data.id + '';
-                    let to = data.namespace;
-
-                    if (from != to) {
-                        node.rename = to;
-                        let res = await this.move(node);
-                        if (!res) {
-                            toastr.error("invalidate namespace");
-                            return;
-                        }
-                    }
-
-                    node.path = node.path.split("/")
-                    node.path[3] = to;
-                    node.path = node.path.join("/");
-
-                    data.id = to;
-                    editor.modify({ path: 'app/' + to, title: data.title ? data.title : data.namespace, subtitle: to });
-
-                    for (let i = 0; i < editor.tabs.length; i++) {
-                        let topath: any = editor.tabs[i].path + '';
-                        topath = topath.split("/");
-                        topath[3] = to;
-                        topath = topath.join("/");
-                        editor.tabs[i].move(topath);
-                    }
-
-                    node.name = data.title;
-                    data = JSON.stringify(data, null, 4);
-                    await this.update(node.path + '/app.json', data);
-                });
-
-                let tabs: any = [
-                    editor.create({
-                        name: 'Pug',
-                        viewref: MonacoEditor,
-                        path: node.path + "/view.pug",
-                        config: { monaco: { language: 'pug' } }
-                    }),
-                    editor.create({
-                        name: 'Component',
-                        viewref: MonacoEditor,
-                        path: node.path + "/view.ts",
-                        config: { monaco: { language: 'typescript', renderValidationDecorations: 'off' } }
-                    }),
-                    editor.create({
-                        name: 'SCSS',
-                        viewref: MonacoEditor,
-                        path: node.path + "/view.scss",
-                        config: { monaco: { language: 'scss' } }
-                    }),
-                    editor.create({
-                        name: 'API',
-                        viewref: MonacoEditor,
-                        path: node.path + "/api.py",
-                        config: { monaco: { language: 'python' } }
-                    }),
-                    editor.create({
-                        name: 'Socket',
-                        viewref: MonacoEditor,
-                        path: node.path + "/socket.py",
-                        config: { monaco: { language: 'python' } }
-                    })
-                ];
-
-                for (let i = 0; i < tabs.length; i++) {
-                    tabs[i].bind('data', async (tab) => {
-                        editor.meta.info = await editor.tab(0).data();
-                        let { code, data } = await wiz.call('read', { path: tab.path });
-                        if (code != 200) data = null;
-                        if (!data) {
-                            if (tab.name == 'Component') {
-                                data = DEFAULT_COMPONENT;
-                            } else if (tab.name == 'API') {
-                                data = DEFAULT_API;
-                            }
-                        }
-
-                        return { data };
-                    }).bind('update', async (tab) => {
-                        let data = await tab.data();
-                        await this.update(tab.path, data.data);
-                    });
-                }
-
-                editor.bind("delete", async () => {
-                    let res = await this.service.alert.show({ title: 'Delete App', message: 'Are you sure remove "' + editor.title + '"?', action_text: "Delete", action_class: "btn-danger" });
-                    if (res !== true) return;
-
-                    let targets = await this.service.editor.find(editor);
-                    for (let i = 0; i < targets.length; i++)
-                        await targets[i].close();
-
-                    await this.delete(node, true);
-                });
-
-                editor.bind("clone", async (location: number = -1) => {
-                    await this.open(node, location);
-                });
-
+                let app = node.meta;
+                app.id = app_id;
+                app.namespace = app_id;
+                let editor = await this.workspace.AppEditor(mod_id, app);
                 await editor.open(location);
             },
             route: async () => {
                 let path = node.path.split("/");
-                let app_id = path[path.length - 1];
                 let mod_id = path[1];
-                let component_id = "portal.route." + mod_id + "." + app_id;
-                let subtitle = "portal." + mod_id + "." + app_id;
-
-                let editor = this.service.editor.create({
-                    component_id: component_id,
-                    path: node.path,
-                    title: node.name,
-                    subtitle: subtitle,
-                    unique: true,
-                    current: 1
-                });
-
-                let ctrls = await wiz.call("controllers", { module: mod_id });
-                ctrls = ctrls.data;
-                editor.ctrls = ctrls;
-
-                editor.id_prefix = "portal." + mod_id + ".";
-
-                editor.create({
-                    name: 'info',
-                    viewref: RouteInfoEditor,
-                    path: node.path + "/app.json"
-                }).bind('data', async (tab) => {
-                    let { code, data } = await wiz.call('read', { path: tab.path });
-                    if (code != 200) return {};
-                    editor.meta.id = JSON.parse(data).id;
-                    data = JSON.parse(data);
-                    return data;
-                }).bind('update', async (tab) => {
-                    let data = await tab.data();
-
-                    let check = /^[a-z0-9.]+$/.test(data.id);
-                    if (!check) return toastr.error("invalidate id");
-                    if (data.id.length < 3) return toastr.error("id at least 3 alphabets");
-
-                    let from = editor.meta.id;
-                    let to = data.id;
-
-                    // if moved
-                    if (from != to) {
-                        node.rename = to;
-                        let res = await this.move(node);
-                        if (!res) {
-                            toastr.error("invalidate namespace");
-                            return;
-                        }
-                    }
-
-                    node.path = node.path.split("/")
-                    node.path[3] = to;
-                    node.path = node.path.join("/");
-
-                    editor.modify({ path: 'route/' + to, title: data.title ? data.title : data.id, subtitle: data.route, meta: { id: to } });
-
-                    for (let i = 0; i < editor.tabs.length; i++) {
-                        let topath: any = editor.tabs[i].path + '';
-                        topath = topath.split("/");
-                        topath[3] = to;
-                        topath = topath.join("/");
-                        editor.tabs[i].move(topath);
-                    }
-
-                    data = JSON.stringify(data, null, 4);
-                    await this.update(node.path + '/app.json', data);
-                });
-
-                editor.create({
-                    name: 'Controller',
-                    viewref: MonacoEditor,
-                    path: node.path + "/controller.py",
-                    config: { monaco: { language: 'python' } }
-                }).bind('data', async (tab) => {
-                    tab.meta.info = await editor.tab(0).data();
-                    let { code, data } = await wiz.call('read', { path: tab.path });
-                    if (code != 200) return {};
-                    return { data };
-                }).bind('update', async (tab) => {
-                    let data = await tab.data();
-                    await this.update(tab.path, data.data);
-                });
-
-                editor.bind("delete", async () => {
-                    let res = await this.service.alert.show({ title: 'Delete Route', message: 'Are you sure remove "' + editor.title + '"?', action_text: "Delete", action_class: "btn-danger" });
-                    if (res !== true) return;
-
-                    let targets = await this.service.editor.find(editor);
-                    for (let i = 0; i < targets.length; i++)
-                        await targets[i].close();
-                    await this.delete(node, true);
-                });
-
-                await editor.open();
+                let app_id = path[path.length - 1];
+                let app = node.meta;
+                app.id = app_id;
+                let editor = await this.workspace.RouteEditor(mod_id, app);
+                await editor.open(location);
             },
-            default: async () => {
-                let viewtypes: any = {
-                    'md': { viewref: MonacoEditor, config: { monaco: { language: 'markdown' } } },
-                    'ts': { viewref: MonacoEditor, config: { monaco: { language: 'typescript', renderValidationDecorations: 'off' } } },
-                    'js': { viewref: MonacoEditor, config: { monaco: { language: 'javascript' } } },
-                    'css': { viewref: MonacoEditor, config: { monaco: { language: 'css' } } },
-                    'scss': { viewref: MonacoEditor, config: { monaco: { language: 'scss' } } },
-                    'json': { viewref: MonacoEditor, config: { monaco: { language: 'json' } } },
-                    'pug': { viewref: MonacoEditor, config: { monaco: { language: 'pug' } } },
-                    'py': { viewref: MonacoEditor, config: { monaco: { language: 'python' } } }
-                };
-
-                let extension = node.path.substring(node.path.lastIndexOf(".") + 1).toLowerCase();
-
-                if (!viewtypes[extension]) {
-                    await this.download(node);
-                    return;
-                }
-
-                let { viewref, config } = viewtypes[extension];
+            info: async () => {
+                let path = node.path.split("/");
+                let app_package = path[path.length - 2];
 
                 let editor = this.service.editor.create({
                     component_id: this.APP_ID,
                     path: node.path,
-                    title: node.name,
+                    title: app_package,
                     unique: true,
                     current: 0
                 });
 
                 editor.create({
-                    name: 'config',
-                    viewref: viewref,
-                    path: node.path,
-                    config: config
-                }).bind('data', async (tab) => {
+                    name: 'info',
+                    viewref: ModuleInfoEditor,
+                    path: node.path
+                }).bind('data', async () => {
                     let { code, data } = await wiz.call('read', { path: node.path });
-                    if (code != 200) return {};
-                    return { data };
+                    if (code != 200) return { package: app_package };
+                    data = JSON.parse(data);
+                    data.package = app_package;
+                    return data;
                 }).bind('update', async (tab) => {
                     let data = await tab.data();
-                    await this.update(node.path, data.data);
+                    let check = /^[a-z0-9.]+$/.test(data.package);
+                    if (!check) return toastr.error("invalidate package name");
+                    if (data.package.length < 3) return toastr.error("package name at least 3 alphabets");
+                    await this.update(node.path, JSON.stringify(data, null, 4));
                 });
 
-                await editor.open();
+                await editor.open(location);
+            },
+            default: async () => {
+                let editor = await this.workspace.FileEditor(node.path);
+                if (editor) {
+                    await editor.open(location);
+                } else {
+                    await this.download(node);
+                }
             }
         }
 
-        if (openEditor[node.type]) await openEditor[node.type]()
-        else await openEditor.default();
+        if (openEditor[node.type]) return await openEditor[node.type]();
+        if (node.meta && openEditor[node.meta.editor]) return await openEditor[node.meta.editor]();
+        await openEditor.default();
     }
 
     public async upload(node: FileNode | null, mode: string = 'file') {
@@ -523,63 +314,22 @@ export class Component implements OnInit {
 
             await this.dataSource.delete(node);
             await this.refresh(node);
+        } else if (node.type == "mod.page") {
+            let path = node.path.split("/");
+            let mod_id = path[1];
+            let editor = await this.workspace.PageEditor(mod_id, { mode: 'portal', id: '', title: '', namespace: '', viewuri: '', category: '' });
+            editor.ctrls = [];
+            editor.layout = [];
+            await editor.open();
         } else if (node.type == "mod.app") {
             let path = node.path.split("/");
             let mod_id = path[1];
-            let editor = this.service.editor.create({ component_id: this.APP_ID, title: 'New' });
-
-            let ctrls = await wiz.call("controllers", { module: mod_id });
-            ctrls = ctrls.data;
-            editor.ctrls = ctrls;
-
-            editor.create({ name: 'info', viewref: InfoEditor })
-                .bind('data', async () => {
-                    return { mode: 'portal', id: '', title: '', namespace: '', viewuri: '', category: '' };
-                }).bind('update', async (tab) => {
-                    let data = await tab.data();
-                    let check = /^[a-z0-9.]+$/.test(data.namespace);
-                    if (!check) return toastr.error("invalidate namespace");
-                    if (data.namespace.length < 3) return toastr.error("namespace at least 3 alphabets");
-
-                    let id = data.namespace;
-                    let res = await wiz.call("exists", { path: node.path + "/" + id });
-                    if (res.data) return toastr.error("namespace already exists");
-
-                    data.id = id;
-                    data = JSON.stringify(data, null, 4);
-
-                    editor.close();
-                    await this.update(node.path + "/" + id + '/app.json', data);
-                });
-
+            let editor = await this.workspace.AppEditor(mod_id, { mode: 'portal', id: '', title: '', namespace: '', viewuri: '', category: '' });
             await editor.open();
         } else if (node.type == "mod.route") {
             let path = node.path.split("/");
             let mod_id = path[1];
-            let editor = this.service.editor.create({ component_id: this.APP_ID, title: 'New' });
-            editor.id_prefix = "portal." + mod_id + ".";
-
-            let ctrls = await wiz.call("controllers", { module: mod_id });
-            ctrls = ctrls.data;
-            editor.ctrls = ctrls;
-
-            editor.create({ name: 'info', viewref: RouteInfoEditor })
-                .bind('data', async () => {
-                    return { id: '', title: '', route: '', viewuri: '', category: '' };
-                }).bind('update', async (tab) => {
-                    let data = await tab.data();
-                    let check = /^[a-z0-9.]+$/.test(data.id);
-                    if (!check) return toastr.error("invalidate id");
-                    if (data.id.length < 3) return toastr.error("id at least 3 alphabets");
-                    let res = await wiz.call("exists", { path: node.path + "/" + data.id });
-                    if (res.data) return toastr.error("namespace already exists");
-
-                    let appid = data.id;
-                    data = JSON.stringify(data, null, 4);
-                    editor.close();
-                    await this.update(node.path + "/" + appid + '/app.json', data);
-                });
-
+            let editor = await this.workspace.RouteEditor(mod_id, { id: '', title: '', route: '', viewuri: '', category: '' });
             await editor.open();
         } else {
             if (!this.treeControl.isExpanded(node))
@@ -590,9 +340,9 @@ export class Component implements OnInit {
     }
 
     public async refresh(node: FileNode | null = null) {
-        if (node && node.parent) {
-            await this.dataSource.toggle(node.parent, false);
-            await this.dataSource.toggle(node.parent, true);
+        if (node) {
+            await this.dataSource.toggle(node, false);
+            await this.dataSource.toggle(node, true);
         } else {
             let data = await this.list(this.rootNode);
             this.dataSource.data = data;
@@ -610,11 +360,21 @@ export class Component implements OnInit {
         await this.service.render();
     }
 
+    public find(path: string) {
+        let data = this.dataSource.data;
+        for (let i = 0; i < data.length; i++) {
+            if (data[i].path == path)
+                return data[i];
+        }
+        return null;
+    }
+
     public async ngOnInit() {
         this.rootNode = new FileNode('root', this.path, 'folder');
         this.treeControl = new FlatTreeControl<FileNode>(this.getLevel, this.isExpandable);
         this.dataSource = new FileDataSource(this);
         let data = await this.list(this.rootNode);
         this.dataSource.data = data;
+        this.service.event.bind(this.APP_ID, this);
     }
 }
