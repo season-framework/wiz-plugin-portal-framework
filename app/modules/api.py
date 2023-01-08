@@ -12,6 +12,24 @@ from season.core.builder.base import Converter
 workspace = wiz.workspace("service")
 fs = workspace.fs()
 
+def install_sample():
+    path = wiz.request.query("path", True)
+    name = path.split("/")[-1]
+    mode = name.split(".")[0]
+    if fs.exists(os.path.join("src", "app", name)):
+        wiz.response.status(404)
+    
+    fs.copy(path, os.path.join("src", "app", name))
+    try:
+        appinfo = fs.read.json(os.path.join("src", "app", name, "app.json"))
+        appinfo['mode'] = mode
+        appinfo['namespace'] = appinfo['namespace'][len(mode)+1:]
+        fs.write.json(os.path.join("src", "app", name, "app.json"), appinfo)
+    except:
+        pass
+
+    wiz.response.status(200)
+
 def upgrade():
     path = wiz.request.query("path", True)
     info = fs.read.json(os.path.join(path, "portal.json"), dict())
@@ -43,66 +61,88 @@ def list(segment):
     segment = path.split("/")
     res = []
 
-    if fs.isdir(path):
-        if len(segment) == 1:
-            files = fs.files(path)
-            for name in files:
-                fpath = os.path.join(path, name)
-                if fs.isdir(fpath) == False:
-                    continue
-                plugin = fs.read.json(os.path.join(fpath, "portal.json"), dict())
-                title = name
-                if 'title' in plugin and len(plugin['title']) > 0:
-                    title = plugin['title']
-                res.append(dict(name=title, path=fpath, type='folder', meta=plugin))
-            
-            res = sorted(res, key=lambda k: k['name'])
-            wiz.response.status(200, res)
-
-        elif len(segment) == 2:
-            res.append(dict(name='sample', path=os.path.join(path, 'sample'), type='mod.page'))
-            res.append(dict(name='app', path=os.path.join(path, 'app'), type='mod.app', meta=dict(icon="fa-solid fa-layer-group")))
-            res.append(dict(name='api', path=os.path.join(path, 'route'), type='mod.route', meta=dict(icon="fa-solid fa-link")))
-            res.append(dict(name='libs', path=os.path.join(path, 'libs'), type='mod.libs', meta=dict(icon="fa-solid fa-book")))
-            res.append(dict(name='assets', path=os.path.join(path, 'assets'), type='mod.assets', meta=dict(icon="fa-solid fa-images")))
-            res.append(dict(name='controller', path=os.path.join(path, 'controller'), type='mod.controller'))
-            res.append(dict(name='model', path=os.path.join(path, 'model'), type='mod.model'))
-            res.append(dict(name='Package Info', path=os.path.join(path, 'portal.json'), type='file', meta=dict(icon="fa-solid fa-info", editor="info")))
-            res.append(dict(name='README', path=os.path.join(path, 'README.md'), type='file'))
-            wiz.response.status(200, res)
-        
-        elif len(segment) == 3:
-            mod = segment[2]
-            if mod == 'sample':
-                mod = 'page'
-            
-            if mod == 'app' or mod == 'route' or mod == 'page':
-                files = fs.files(path)
-                for name in files:
-                    fpath = os.path.join(path, name)
-                    if fs.isfile(os.path.join(fpath, 'app.json')):
-                        appinfo = fs.read.json(os.path.join(fpath, 'app.json'))
-                        if mod == 'route':
-                            res.append(dict(name=appinfo['route'], path=fpath, type=mod, meta=appinfo))
-                        else:
-                            res.append(dict(name=appinfo['title'], path=fpath, type=mod, meta=appinfo))
-
-                wiz.response.status(200, res)
-
-        elif len(segment) > 3:
-            mod = segment[2]
-            if mod == 'app' or mod == 'route':
-                wiz.response.status(200, res)
- 
+    if len(segment) == 1:
         files = fs.files(path)
         for name in files:
             fpath = os.path.join(path, name)
-            ftype = 'file' if fs.isfile(fpath) else 'folder'
-            res.append(dict(name=name, path=fpath, type=ftype))
+            if fs.isdir(fpath) == False:
+                continue
+            plugin = fs.read.json(os.path.join(fpath, "portal.json"), dict())
+            title = name
+            if 'title' in plugin and len(plugin['title']) > 0:
+                title = plugin['title']
+            res.append(dict(name=title, path=fpath, type='folder', meta=plugin))
         
+        res = sorted(res, key=lambda k: k['name'])
         wiz.response.status(200, res)
 
-    wiz.response.status(404, [])
+    elif len(segment) == 2:
+        plugin = fs.read.json(os.path.join(path, "portal.json"), dict())
+        def checker(name):
+            if f"use_{name}" in plugin:
+                return plugin[f"use_{name}"]
+            return False
+        
+        if checker('sample'): res.append(dict(name='sample', path=os.path.join(path, 'sample'), type='mod.sample'))
+        if checker('app'): res.append(dict(name='app', path=os.path.join(path, 'app'), type='mod.app', meta=dict(icon="fa-solid fa-layer-group")))
+        if checker('route'): res.append(dict(name='api', path=os.path.join(path, 'route'), type='mod.route', meta=dict(icon="fa-solid fa-link")))
+        if checker('libs'): res.append(dict(name='libs', path=os.path.join(path, 'libs'), type='mod.libs', meta=dict(icon="fa-solid fa-book")))
+        if checker('styles'): res.append(dict(name='styles', path=os.path.join(path, 'styles'), type='mod.styles', meta=dict(icon="fa-brands fa-css")))
+        if checker('assets'): res.append(dict(name='assets', path=os.path.join(path, 'assets'), type='mod.assets', meta=dict(icon="fa-solid fa-images")))
+        if checker('controller'): res.append(dict(name='controller', path=os.path.join(path, 'controller'), type='mod.controller'))
+        if checker('model'): res.append(dict(name='model', path=os.path.join(path, 'model'), type='mod.model'))
+        res.append(dict(name='Package Info', path=os.path.join(path, 'portal.json'), type='file', meta=dict(icon="fa-solid fa-info", editor="info")))
+        res.append(dict(name='README', path=os.path.join(path, 'README.md'), type='file'))
+        wiz.response.status(200, res)
+    
+    elif len(segment) == 3:
+        mod = segment[2]
+        if mod == 'sample':
+            res.append(dict(name='page', path=os.path.join(path, 'page'), type='mod.sample.page'))
+            res.append(dict(name='component', path=os.path.join(path, 'component'), type='mod.sample.app'))
+            res.append(dict(name='layout', path=os.path.join(path, 'layout'), type='mod.sample.app'))
+            wiz.response.status(200, res)
+        
+        if mod == 'app' or mod == 'route' or mod == 'page':
+            files = fs.files(path)
+            for name in files:
+                fpath = os.path.join(path, name)
+                if fs.isfile(os.path.join(fpath, 'app.json')):
+                    appinfo = fs.read.json(os.path.join(fpath, 'app.json'))
+                    if mod == 'route':
+                        res.append(dict(name=appinfo['route'], path=fpath, type=mod, meta=appinfo))
+                    else:
+                        res.append(dict(name=appinfo['title'], path=fpath, type=mod, meta=appinfo))
+
+            wiz.response.status(200, res)
+
+    elif len(segment) > 3:
+        mod = segment[2]
+        if mod == 'app' or mod == 'route':
+            wiz.response.status(200, res)
+        
+        if mod == 'sample':
+            mod = segment[3]
+            if mod == 'layout' or mod == 'component' or mod == 'page':
+                spath = os.path.join(*segment[:3])
+                files = fs.files(spath)
+                for name in files:
+                    if name.split(".")[0] != mod:
+                        continue
+                    fpath = os.path.join(spath, name)
+                    if fs.isfile(os.path.join(fpath, 'app.json')):
+                        appinfo = fs.read.json(os.path.join(fpath, 'app.json'))
+                        res.append(dict(name=appinfo['title'], path=fpath, type=mod, meta=appinfo))
+
+                wiz.response.status(200, res)
+
+    files = fs.files(path)
+    for name in files:
+        fpath = os.path.join(path, name)
+        ftype = 'file' if fs.isfile(fpath) else 'folder'
+        res.append(dict(name=name, path=fpath, type=ftype))
+    
+    wiz.response.status(200, res)
 
 def exists(segment):
     path = wiz.request.query("path", True)
@@ -338,18 +378,28 @@ def build():
             appfs.remove(app)
 
     # remove portal
-    appfs = workspace.fs(os.path.join("src", "controller")).remove("portal")
-    appfs = workspace.fs(os.path.join("src", "model")).remove("portal")
-    appfs = workspace.fs(os.path.join("src", "assets")).remove("portal")
-    appfs = workspace.fs(os.path.join("src", "angular/libs")).remove("portal")
+    workspace.fs(os.path.join("src", "controller")).remove("portal")
+    workspace.fs(os.path.join("src", "model")).remove("portal")
+    workspace.fs(os.path.join("src", "assets")).remove("portal")
+    workspace.fs(os.path.join("src", "angular", "libs")).remove("portal")
+    workspace.fs(os.path.join("src", "angular", "styles")).remove("portal")
 
     for module in modules:
-        buildApp(module)
-        buildApi(module)
-        buildFiles(module, "controller", "controller")
-        buildFiles(module, "model", "model")
-        buildFiles(module, "assets", "assets")
-        buildFiles(module, "angular/libs", "libs")
+        # load module info
+        info = fs.read.json(os.path.join("portal", module, "portal.json"), dict())
+        def checker(name):
+            if f"use_{name}" in info:
+                return info[f"use_{name}"]
+            return False
+
+        # build module
+        if checker("app"): buildApp(module)
+        if checker("route"): buildApi(module)
+        if checker("controller"): buildFiles(module, "controller", "controller")
+        if checker("model"): buildFiles(module, "model", "model")
+        if checker("assets"): buildFiles(module, "assets", "assets")
+        if checker("libs"): buildFiles(module, "angular/libs", "libs")
+        if checker("styles"): buildFiles(module, "angular/styles", "styles")
 
     workspace.build()
     workspace.route.build()

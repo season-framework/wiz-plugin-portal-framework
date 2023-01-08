@@ -121,14 +121,41 @@ export class Component implements OnInit {
         if (node.type.split(".")[0] == "new") return;
 
         let openEditor = {
-            page: async () => {
+            samplepage: async () => {
                 let path = node.path.split("/");
                 let mod_id = path[1];
                 let app_id = path[path.length - 1];
                 let app = node.meta;
                 app.id = app_id;
                 app.namespace = app_id;
+                app.mode = 'sample';
                 let editor = await this.workspace.PageEditor(mod_id, app);
+                editor.ctrls = [];
+                editor.layout = [];
+                await editor.open(location);
+            },
+            samplecomponent: async () => {
+                let path = node.path.split("/");
+                let mod_id = path[1];
+                let app_id = path[path.length - 1];
+                let app = node.meta;
+                app.id = app_id;
+                app.namespace = app_id;
+                app.mode = 'sample';
+                let editor = await this.workspace.AppEditor(mod_id, app);
+                editor.ctrls = [];
+                editor.layout = [];
+                await editor.open(location);
+            },
+            samplelayout: async () => {
+                let path = node.path.split("/");
+                let mod_id = path[1];
+                let app_id = path[path.length - 1];
+                let app = node.meta;
+                app.id = app_id;
+                app.namespace = app_id;
+                app.mode = 'sample';
+                let editor = await this.workspace.AppEditor(mod_id, app);
                 editor.ctrls = [];
                 editor.layout = [];
                 await editor.open(location);
@@ -194,9 +221,13 @@ export class Component implements OnInit {
             }
         }
 
-        if (openEditor[node.type]) return await openEditor[node.type]();
-        if (node.meta && openEditor[node.meta.editor]) return await openEditor[node.meta.editor]();
-        await openEditor.default();
+        if (node.path.split("/")[2] == 'sample') {
+            if (openEditor["sample" + node.type]) return await openEditor["sample" + node.type]();
+        } else {
+            if (openEditor[node.type]) return await openEditor[node.type]();
+            if (node.meta && openEditor[node.meta.editor]) return await openEditor[node.meta.editor]();
+            await openEditor.default();
+        }
     }
 
     public async upload(node: FileNode | null, mode: string = 'file') {
@@ -280,7 +311,7 @@ export class Component implements OnInit {
         }
 
         await this.dataSource.delete(node);
-        await this.refresh(node);
+        await this.refresh(node.parent);
         return true;
     }
 
@@ -293,6 +324,7 @@ export class Component implements OnInit {
             await wiz.call("delete", { path: node.path });
         }
         await this.dataSource.delete(node);
+        await this.build();
     }
 
     public async create(node: FileNode | null, type: any) {
@@ -313,11 +345,25 @@ export class Component implements OnInit {
             }
 
             await this.dataSource.delete(node);
-            await this.refresh(node);
-        } else if (node.type == "mod.page") {
+            await this.refresh(node.parent);
+        } else if (node.type == "mod.sample.page") {
             let path = node.path.split("/");
             let mod_id = path[1];
-            let editor = await this.workspace.PageEditor(mod_id, { mode: 'portal', id: '', title: '', namespace: '', viewuri: '', category: '' });
+            let editor = await this.workspace.PageEditor(mod_id, { mode: 'sample', id: '', title: '', namespace: '', viewuri: '', category: '' });
+            editor.ctrls = [];
+            editor.layout = [];
+            await editor.open();
+        } else if (node.type == "mod.sample.app") {
+            let path = node.path.split("/");
+            let mod_id = path[1];
+            let editor = await this.workspace.AppEditor(mod_id, { mode: 'sample', id: '', title: '', namespace: '', viewuri: '', category: '' });
+            editor.ctrls = [];
+            editor.layout = [];
+            await editor.open();
+        } else if (node.type == "mod.sample") {
+            let path = node.path.split("/");
+            let mod_id = path[1];
+            let editor = await this.workspace.AppEditor(mod_id, { mode: 'sample', id: '', title: '', namespace: '', viewuri: '', category: '' });
             editor.ctrls = [];
             editor.layout = [];
             await editor.open();
@@ -367,6 +413,14 @@ export class Component implements OnInit {
                 return data[i];
         }
         return null;
+    }
+
+    public async install(node: FileNode) {
+        let res = await this.service.alert.show({ title: 'Install', message: 'Are you sure to install `' + node.name + '`?', action: "Install", actionBtn: "success", status: 'success' });
+        if (!res) return;
+        let { code } = await wiz.call("install_sample", { path: node.path });
+        if (code == 200) toastr.success("Installed");
+        else toastr.error("Already Installed");
     }
 
     public async ngOnInit() {

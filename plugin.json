@@ -1,6 +1,6 @@
 {
     "package": "portal",
     "title": "Portal Framework",
-    "version": "1.0.0",
-    "repo": "https://github.com/season-framework/wiz-plugin-portal-framework"
+    "version": "2.2.1",
+    "repo": "portal"
 }

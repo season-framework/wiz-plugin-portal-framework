@@ -210,7 +210,7 @@ export class FileEditor {
             if (res.code == 200) toastr.info("Builded");
             else toastr.error("Error on build");
             let previewBinding = this.service.event.load("workspace.app.preview");
-            await previewBinding.move();
+            if (previewBinding) await previewBinding.move();
         });
 
         return editor;
@@ -283,7 +283,7 @@ export class RouteEditor {
             for (let i = 0; i < editor.tabs.length; i++) {
                 let topath: any = editor.tabs[i].path + '';
                 topath = topath.split("/");
-                topath[3] = appinfo.id;
+                topath[topath.length - 2] = appinfo.id;
                 topath = topath.join("/");
                 editor.tabs[i].move(topath);
             }
@@ -293,7 +293,7 @@ export class RouteEditor {
                     let node = binding.find(upath);
                     if (node) {
                         node.path = node.path.split("/")
-                        node.path[3] = appinfo.id;
+                        node.path[node.path - 2] = appinfo.id;
                         node.path = node.path.join("/");
                         node.name = appinfo.title;
                         if (node.parent)
@@ -439,11 +439,12 @@ export class AppEditor {
         }
 
         let BASEPATH = "portal/" + mod_id + "/app";
-        if (ieditor == PageInfoEditor) BASEPATH = "portal/" + mod_id + "/sample";
+        if (app.mode == 'sample') BASEPATH = "portal/" + mod_id + "/sample";
 
         let app_id = app.id;
         let path = BASEPATH + "/" + (app_id ? app_id : 'new');
         let component_id = "portal." + mod_id + "." + app_id;
+        if (app.mode == 'sample') component_id = app_id;
 
         let editor = this.service.editor.create(app_id ? {
             component_id: this.APP_ID,
@@ -457,7 +458,8 @@ export class AppEditor {
             title: 'new',
         });
 
-        editor.namespace_prefix = "portal." + mod_id + ".";
+        if (app.mode != 'sample')
+            editor.namespace_prefix = "portal." + mod_id + ".";
 
         let ctrls = await wiz.call("controllers", { module: mod_id });
         ctrls = ctrls.data;
@@ -488,12 +490,13 @@ export class AppEditor {
 
             let upath = BASEPATH + "/" + appinfo.id;
             component_id = "portal." + mod_id + "." + appinfo.id;
+            if (app.mode == 'sample') component_id = app_id;
             editor.modify({ path: upath, title: appinfo.title ? appinfo.title : appinfo.namespace, subtitle: component_id });
 
             for (let i = 0; i < editor.tabs.length; i++) {
                 let topath: any = editor.tabs[i].path + '';
                 topath = topath.split("/");
-                topath[3] = appinfo.id;
+                topath[topath.length - 2] = appinfo.id;
                 topath = topath.join("/");
                 editor.tabs[i].move(topath);
             }
@@ -503,7 +506,7 @@ export class AppEditor {
                     let node = binding.find(upath);
                     if (node) {
                         node.path = node.path.split("/")
-                        node.path[3] = appinfo.id;
+                        node.path[node.path.length - 2] = appinfo.id;
                         node.path = node.path.join("/");
                         node.name = appinfo.title;
                         if (node.parent)
@@ -591,6 +594,27 @@ export class AppEditor {
             }
         }).bind('update', async (tab) => {
             let appinfo = await tab.data();
+
+            if (app.mode == 'sample') {
+                if (app.id) {
+                    if (app.id.split(".")[0] != appinfo.namespace.split(".")[0]) {
+                        return toastr.error("first namespace not allowed to change");
+                    }
+                } else {
+                    let mtype = appinfo.namespace.split(".")[0];
+                    if (ieditor == PageInfoEditor) {
+                        if (mtype != 'page') {
+                            return toastr.error("first namespace must `page`");
+                        }
+                    } else {
+                        if (mtype != 'component' && mtype != 'layout') {
+                            return toastr.error("first namespace must `component` or `layout`");
+                        }
+                    }
+                }
+
+            }
+
             let check = /^[a-z0-9.]+$/.test(appinfo.namespace);
             if (!check) return toastr.error("invalidate namespace");
             if (appinfo.namespace.length < 3) return toastr.error("namespace at least 3 alphabets");
